@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'identity',
     'student',
     'academics',
+    'attendance',
 
 ]
 
