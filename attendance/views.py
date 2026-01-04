@@ -5,6 +5,8 @@ from .models import Attendance
 from .serializers import AttendanceSerializer
 from student.models import Student
 from academics.models import Subject, Hour
+from django.db.models import Count, Q
+
 
 @api_view(['POST'])
 def mark_attendance(request):
@@ -38,3 +40,46 @@ def mark_attendance(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=400)
+
+
+
+
+@api_view(['GET'])
+def student_dashboard(request, student_id):
+    try:
+        student = Student.objects.get(id=student_id)
+
+        total_classes = Attendance.objects.filter(student=student).count()
+        present_count = Attendance.objects.filter(
+            student=student, status=Attendance.PRESENT
+        ).count()
+        absent_count = Attendance.objects.filter(
+            student=student, status=Attendance.ABSENT
+        ).count()
+
+        percentage = 0
+        if total_classes > 0:
+            percentage = round((present_count / total_classes) * 100, 2)
+
+        # Subject-wise stats
+        subject_stats = (
+            Attendance.objects
+            .filter(student=student)
+            .values('subject__name')
+            .annotate(
+                total=Count('id'),
+                present=Count('id', filter=Q(status=Attendance.PRESENT))
+            )
+        )
+
+        return Response({
+            "student": student.roll_number,
+            "total_classes": total_classes,
+            "present_days": present_count,
+            "absent_days": absent_count,
+            "attendance_percentage": percentage,
+            "subject_wise": subject_stats
+        })
+
+    except Student.DoesNotExist:
+        return Response({"error": "Student not found"}, status=404)

@@ -17,6 +17,7 @@ class Student(models.Model):
     # Placeholder for AI face data (encoding path or ID)
     face_data = models.TextField(blank=True, null=True)
 
+
     def __str__(self):
         return f"{self.roll_number} - {self.user.username}"
 
