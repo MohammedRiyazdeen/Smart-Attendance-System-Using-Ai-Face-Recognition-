@@ -1,6 +1,8 @@
 from django.db import models
 from student.models import Student
 from academics.models import Subject, Hour
+from identity.models import Teacher
+
 
 class Attendance(models.Model):
     PRESENT = 'present'
@@ -22,4 +24,16 @@ class Attendance(models.Model):
         unique_together = ('student', 'date', 'hour')
 
     def __str__(self):
-        return f"{self.student.roll_number} | {self.date} | Hour {self.hour.hour_number}"
+        return f"{self.student} | {self.date} | {self.status}"
+
+
+class AttendanceSession(models.Model):
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    hour = models.ForeignKey(Hour, on_delete=models.CASCADE)
+
+    date = models.DateField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.teacher} | {self.subject} | {self.date}"
