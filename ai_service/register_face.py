@@ -6,8 +6,12 @@ import time
 import requests
 
 ENCODINGS_DIR = "encodings"
-TOLERANCE = 0.5   # lower = stricter
-MODEL = "hog"     # cpu-friendly
+TOLERANCE = 0.5
+MODEL = "hog"
+
+API_URL = "http://127.0.0.1:8000/api/attendance/mark/"
+SESSION_ID = 1   # 🔥 set from teacher dashboard later
+
 
 def load_known_faces():
     known_encodings = []
@@ -16,53 +20,38 @@ def load_known_faces():
     for file in os.listdir(ENCODINGS_DIR):
         if file.endswith(".npy"):
             student_id = file.replace(".npy", "")
-            encoding = np.load(os.path.join(ENCODINGS_DIR, file))
-            known_encodings.append(encoding)
             known_ids.append(student_id)
+            known_encodings.append(
+                np.load(os.path.join(ENCODINGS_DIR, file))
+            )
 
     return known_encodings, known_ids
 
 
 def send_attendance(student_id):
-    url = "http://127.0.0.1:8000/api/attendance/mark/"
     payload = {
-        "student": int(student_id),
-        "subject": 1,   # TEMP (later dynamic)
-        "hour": 1       # TEMP (later dynamic)
+        "student_id": int(student_id),
+        "session_id": SESSION_ID
     }
 
     try:
-        res = requests.post(url, json=payload, timeout=3)
-        try:
-            print("📡 Backend response:", res.json())
-        except Exception:
-            print("📡 Backend response:", res.status_code)
+        res = requests.post(API_URL, json=payload, timeout=3)
+        print("📡", res.json())
     except Exception as e:
-        print("❌ Failed to send attendance:", e)
+        print("❌ Failed:", e)
 
 
 def recognize_faces():
-    print("🔍 Loading known face encodings...")
     known_encodings, known_ids = load_known_faces()
 
     if not known_encodings:
-        print("❌ No registered faces found")
+        print("❌ No registered faces")
         return
 
-    cam = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cam = cv2.VideoCapture(0)
+    marked_students = set()
 
-    if not cam.isOpened():
-        print("❌ Camera not accessible")
-        return
-
-    window_name = "AI Attendance - Face Recognition"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(window_name, 900, 600)
-
-    print("\n📸 Camera ON")
-    print("👉 Press Q to quit\n")
-
-    last_seen = {}
+    print("📸 Camera ON | Press Q to quit")
 
     while True:
         ret, frame = cam.read()
@@ -70,47 +59,32 @@ def recognize_faces():
             break
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        locations = face_recognition.face_locations(rgb, model=MODEL)
+        encodings = face_recognition.face_encodings(rgb, locations)
 
-        face_locations = face_recognition.face_locations(
-            rgb, number_of_times_to_upsample=0, model=MODEL
-        )
-        face_encodings = face_recognition.face_encodings(
-            rgb, face_locations
-        )
-
-        for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
-
+        for (top, right, bottom, left), encoding in zip(locations, encodings):
             distances = face_recognition.face_distance(
-                known_encodings, face_encoding
+                known_encodings, encoding
             )
+            best_match = np.argmin(distances)
 
-            best_match_index = np.argmin(distances)
+            label = "Unknown"
 
-            name = "Unknown"
+            if distances[best_match] < TOLERANCE:
+                student_id = known_ids[best_match]
+                label = f"ID: {student_id}"
 
-            if distances[best_match_index] < TOLERANCE:
-                student_id = known_ids[best_match_index]
-                name = f"ID: {student_id}"
-
-                # 🔔 Attendance trigger (temporary)
-                if student_id not in last_seen:
-                    print(f"✅ Student recognized: {student_id}")
+                if student_id not in marked_students:
                     send_attendance(student_id)
-                    last_seen[student_id] = time.time()
+                    marked_students.add(student_id)
 
-            # Draw box + label
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(
-                frame,
-                name,
-                (left, top - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.9,
-                (0, 255, 0),
-                2
+                frame, label, (left, top - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
             )
 
-        cv2.imshow(window_name, frame)
+        cv2.imshow("AI Attendance", frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
